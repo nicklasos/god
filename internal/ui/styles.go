@@ -19,7 +19,8 @@ var (
 	panelStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(accentColor).
-			Padding(1, 2)
+			Padding(1, 2).
+			Margin(1, 0) // Add top margin to ensure borders are visible
 
 	listPanelStyle = panelStyle.Copy().
 			Width(40).
@@ -84,16 +85,16 @@ var (
 				Bold(true)
 
 	statusFatalStyle = lipgloss.NewStyle().
-			Foreground(errorColor).
-			Bold(true)
+				Foreground(errorColor).
+				Bold(true)
 
 	statusExitedStyle = lipgloss.NewStyle().
-			Foreground(subtleColor).
-			Bold(true)
+				Foreground(subtleColor).
+				Bold(true)
 
 	statusUnknownStyle = lipgloss.NewStyle().
-			Foreground(subtleColor).
-			Bold(true)
+				Foreground(subtleColor).
+				Bold(true)
 
 	// Editor styles
 	inputStyle = lipgloss.NewStyle().
@@ -103,10 +104,10 @@ var (
 			Padding(0, 1)
 
 	inputFocusedStyle = lipgloss.NewStyle().
-			Foreground(fgColor).
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(selectColor).
-			Padding(0, 1)
+				Foreground(fgColor).
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(selectColor).
+				Padding(0, 1)
 
 	helpStyle = lipgloss.NewStyle().
 			Foreground(subtleColor).
@@ -140,4 +141,3 @@ func GetStatusStyle(status string) lipgloss.Style {
 		return statusUnknownStyle
 	}
 }
-

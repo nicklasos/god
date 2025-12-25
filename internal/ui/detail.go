@@ -44,59 +44,74 @@ func (m *DetailModel) View() string {
 	lines = append(lines, titleStyle.Render("Process Info"))
 	lines = append(lines, "")
 
-	// Name
-	lines = append(lines, labelStyle.Render("Name:"))
-	lines = append(lines, valueStyle.Render(m.process.Name))
+	// Display info in compact rows
+	var infoRows []string
 
-	lines = append(lines, "")
-
-	// Status
-	lines = append(lines, labelStyle.Render("Status:"))
+	// Row 1: Name and Status
+	nameStatus := labelStyle.Render("Name:") + " " + valueStyle.Render(m.process.Name)
 	statusStyle := GetStatusStyle(m.process.Status)
-	lines = append(lines, statusStyle.Render(m.process.Status))
+	nameStatus += "  |  " + labelStyle.Render("Status:") + " " + statusStyle.Render(m.process.Status)
+	infoRows = append(infoRows, nameStatus)
 
-	lines = append(lines, "")
-
-	// PID
-	if m.process.PID > 0 {
-		lines = append(lines, labelStyle.Render("PID:"))
-		lines = append(lines, valueStyle.Render(fmt.Sprintf("%d", m.process.PID)))
-		lines = append(lines, "")
+	// Row 2: PID and Uptime
+	if m.process.PID > 0 || m.process.Uptime > 0 {
+		var row2 string
+		if m.process.PID > 0 {
+			row2 = labelStyle.Render("PID:") + " " + valueStyle.Render(fmt.Sprintf("%d", m.process.PID))
+		}
+		if m.process.Uptime > 0 {
+			if row2 != "" {
+				row2 += "  |  "
+			}
+			row2 += labelStyle.Render("Uptime:") + " " + valueStyle.Render(formatUptime(m.process.Uptime))
+		}
+		if row2 != "" {
+			infoRows = append(infoRows, row2)
+		}
 	}
 
-	// Uptime
-	if m.process.Uptime > 0 {
-		lines = append(lines, labelStyle.Render("Uptime:"))
-		lines = append(lines, valueStyle.Render(formatUptime(m.process.Uptime)))
-	}
-
-	// Config info if available
+	// Config info if available (compact format)
 	if m.process.Config != nil {
-		lines = append(lines, "")
-		lines = append(lines, labelStyle.Render("Command:"))
+		var configRows []string
+
+		// Command and User on one line if space allows
+		var cmdUserRow string
 		if m.process.Config.Command != "" {
-			lines = append(lines, valueStyle.Render(m.process.Config.Command))
-		} else {
-			lines = append(lines, valueStyle.Foreground(subtleColor).Render("(not set)"))
+			// Truncate long commands to fit in panel
+			cmd := m.process.Config.Command
+			maxCmdLen := m.width - 20 // Leave space for label and padding
+			if maxCmdLen > 0 && len(cmd) > maxCmdLen {
+				cmd = cmd[:maxCmdLen-3] + "..."
+			}
+			cmdUserRow = labelStyle.Render("Cmd:") + " " + valueStyle.Render(cmd)
 		}
-
-		lines = append(lines, "")
-		lines = append(lines, labelStyle.Render("Directory:"))
-		if m.process.Config.Directory != "" {
-			lines = append(lines, valueStyle.Render(m.process.Config.Directory))
-		} else {
-			lines = append(lines, valueStyle.Foreground(subtleColor).Render("(not set)"))
-		}
-
-		lines = append(lines, "")
-		lines = append(lines, labelStyle.Render("User:"))
 		if m.process.Config.User != "" {
-			lines = append(lines, valueStyle.Render(m.process.Config.User))
-		} else {
-			lines = append(lines, valueStyle.Foreground(subtleColor).Render("(not set)"))
+			if cmdUserRow != "" {
+				cmdUserRow += "  |  "
+			}
+			cmdUserRow += labelStyle.Render("User:") + " " + valueStyle.Render(m.process.Config.User)
+		}
+		if cmdUserRow != "" {
+			configRows = append(configRows, cmdUserRow)
+		}
+
+		// Directory on its own line if present
+		if m.process.Config.Directory != "" {
+			dir := m.process.Config.Directory
+			maxDirLen := m.width - 10 // Leave space for label and padding
+			if maxDirLen > 0 && len(dir) > maxDirLen {
+				dir = dir[:maxDirLen-3] + "..."
+			}
+			configRows = append(configRows, labelStyle.Render("Dir:")+" "+valueStyle.Render(dir))
+		}
+
+		if len(configRows) > 0 {
+			infoRows = append(infoRows, "")
+			infoRows = append(infoRows, configRows...)
 		}
 	}
 
+	lines = append(lines, infoRows...)
 	content := strings.Join(lines, "\n")
 	return detailPanelStyle.Width(m.width).Height(m.height).Render(content)
 }

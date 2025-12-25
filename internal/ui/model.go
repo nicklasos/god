@@ -708,6 +708,9 @@ func (m *Model) renderSearch() string {
 		rightView,
 	)
 
+	// Add top margin to ensure borders are visible
+	content = lipgloss.NewStyle().MarginTop(1).Render(content)
+
 	searchQuery := m.searchInput.Value()
 	if searchQuery == "" {
 		searchQuery = "(empty)"
