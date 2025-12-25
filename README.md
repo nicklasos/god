@@ -2,6 +2,8 @@
 
 A vim-inspired terminal user interface (TUI) for managing supervisord processes. Easily browse, control, and manage your supervisord processes with a beautiful, keyboard-driven interface.
 
+![Screenshot](screen.png)
+
 ## Features
 
 - **Three-panel interface**: Browse processes on the left, view details and logs on the right
@@ -15,22 +17,48 @@ A vim-inspired terminal user interface (TUI) for managing supervisord processes.
 
 ## Installation
 
-### Option 1: Build from Source
+### Option 1: Homebrew (macOS/Linux) 🍺
 
 ```bash
-git clone <repository-url>
-cd supervisord-tui
-go build -o supervisord-tui
-sudo mv supervisord-tui /usr/local/bin/
+brew install nicklasos/tap/god
 ```
 
-### Option 2: Install with Go
+### Option 2: Download Binary 📦
+
+Download the latest binary for your platform from the [releases page](https://github.com/nicklasos/god/releases).
+
+Visit the [releases page](https://github.com/nicklasos/god/releases) and download the appropriate archive for your platform:
+- **macOS Intel**: `god_*_Darwin_x86_64.tar.gz`
+- **macOS Apple Silicon**: `god_*_Darwin_arm64.tar.gz`
+- **Linux AMD64**: `god_*_Linux_x86_64.tar.gz`
+- **Linux ARM64**: `god_*_Linux_arm64.tar.gz`
+- **Windows**: `god_*_Windows_x86_64.zip`
+
+Then extract and install:
+```bash
+# For tar.gz files
+tar xzf god_*.tar.gz
+sudo mv god /usr/local/bin/
+
+# For Windows, extract the zip and add to PATH
+```
+
+### Option 3: Install with Go
 
 ```bash
 go install github.com/nicklasos/supervisord-tui@latest
 ```
 
 Make sure `$GOPATH/bin` or `$GOBIN` is in your PATH.
+
+### Option 4: Build from Source
+
+```bash
+git clone https://github.com/nicklasos/god.git
+cd god
+make build
+sudo mv god /usr/local/bin/
+```
 
 ## Requirements
 
@@ -50,6 +78,12 @@ The application automatically detects your supervisord config file by checking:
 6. `~/.supervisord.conf` (user home)
 
 You can also specify the config file path:
+
+```bash
+god -config /path/to/supervisord.conf
+```
+
+Or if installed via `go install`:
 
 ```bash
 supervisord-tui -config /path/to/supervisord.conf
@@ -151,12 +185,13 @@ stopwaitsecs=30
 
 ## Interface Layout
 
-The interface is divided into three main areas:
+The interface is divided into two main areas:
 
 1. **Left Panel**: Process list with status indicators
-2. **Right Panel (Top)**: Process information (name, status, PID, uptime, config)
-3. **Right Panel (Middle)**: Error log (last 5 lines from stderr)
-4. **Right Panel (Bottom)**: Stdout log (last 5 lines from stdout)
+2. **Right Panel**: Combined panel with three sections:
+   - **Process Info**: Process information (name, status, PID, uptime, config) - each parameter on its own line
+   - **Error Log**: Last 6 lines from stderr
+   - **Stdout Log**: Last 6 lines from stdout
 
 ## Status Indicators
 
@@ -170,16 +205,52 @@ Process status is color-coded:
 
 - Press `l` to open the stdout log file in your default editor (`$EDITOR` or `vi`)
 - Press `L` (Shift+L) to open the stderr log file in your default editor
-- The last 5 lines from each log are also displayed in the right panel
+- The last 6 lines from each log are also displayed in the right panel
 
 ## Development
 
 To build from source:
 
 ```bash
-git clone <repository-url>
-cd supervisord-tui
-go build -o supervisord-tui
+git clone https://github.com/nicklasos/god.git
+cd god
+make build
+```
+
+Or use the Makefile targets:
+
+```bash
+make help        # Show all available targets
+make build       # Build the binary
+make install     # Install to GOPATH/bin
+make test        # Run tests
+make release     # Create a release (requires GoReleaser and git tag)
+make snapshot    # Create a snapshot build
+```
+
+## Creating Releases
+
+To create a new release:
+
+1. Update the version in `main.go` (or use git tags)
+2. Create a git tag:
+   ```bash
+   git tag -a v1.0.0 -m "Release v1.0.0"
+   git push origin v1.0.0
+   ```
+3. Run GoReleaser:
+   ```bash
+   make release
+   ```
+
+This will:
+- Build binaries for Linux (amd64, arm64), macOS (amd64, arm64), and Windows (amd64)
+- Create GitHub release with all binaries
+- Update the Homebrew tap (if `HOMEBREW_TAP_GITHUB_TOKEN` is set)
+
+For snapshot builds (no git tag required):
+```bash
+make snapshot
 ```
 
 ### Dependencies
@@ -205,13 +276,13 @@ supervisord -c /path/to/supervisord.conf
 
 Specify the config file path explicitly:
 ```bash
-supervisord-tui -config /path/to/supervisord.conf
+god -config /path/to/supervisord.conf
 ```
 
 Or set the environment variable:
 ```bash
 export SUPERVISOR_CONFIG=/path/to/supervisord.conf
-supervisord-tui
+god
 ```
 
 ## License

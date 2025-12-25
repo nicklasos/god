@@ -9,7 +9,7 @@ import (
 	"github.com/nicklasos/supervisord-tui/internal/ui"
 )
 
-const version = "0.1.0"
+var version = "dev"
 
 func main() {
 	showVersion := flag.Bool("version", false, "Show version information")
@@ -17,7 +17,7 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Printf("supervisord-tui version %s\n", version)
+		fmt.Printf("god version %s\n", version)
 		os.Exit(0)
 	}
 
