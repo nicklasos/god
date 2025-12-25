@@ -30,23 +30,31 @@ Download the latest binary for your platform from the [releases page](https://gi
 **macOS:**
 ```bash
 # Intel Mac
-curl -L https://github.com/nicklasos/god/releases/latest/download/god_*_Darwin_x86_64.tar.gz | tar xz
+curl -L https://github.com/nicklasos/god/releases/latest/download/god_Darwin_x86_64.tar.gz -o god.tar.gz
+tar xzf god.tar.gz
 sudo mv god /usr/local/bin/
+rm god.tar.gz
 
 # Apple Silicon (M1/M2/M3)
-curl -L https://github.com/nicklasos/god/releases/latest/download/god_*_Darwin_arm64.tar.gz | tar xz
+curl -L https://github.com/nicklasos/god/releases/latest/download/god_Darwin_arm64.tar.gz -o god.tar.gz
+tar xzf god.tar.gz
 sudo mv god /usr/local/bin/
+rm god.tar.gz
 ```
 
 **Linux:**
 ```bash
 # AMD64
-curl -L https://github.com/nicklasos/god/releases/latest/download/god_*_Linux_x86_64.tar.gz | tar xz
+curl -L https://github.com/nicklasos/god/releases/latest/download/god_Linux_x86_64.tar.gz -o god.tar.gz
+tar xzf god.tar.gz
 sudo mv god /usr/local/bin/
+rm god.tar.gz
 
 # ARM64
-curl -L https://github.com/nicklasos/god/releases/latest/download/god_*_Linux_arm64.tar.gz | tar xz
+curl -L https://github.com/nicklasos/god/releases/latest/download/god_Linux_arm64.tar.gz -o god.tar.gz
+tar xzf god.tar.gz
 sudo mv god /usr/local/bin/
+rm god.tar.gz
 ```
 
 **Windows:**
