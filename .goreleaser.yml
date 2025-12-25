@@ -42,6 +42,8 @@ checksum:
 changelog:
   sort: asc
 
+# Homebrew tap - only runs if HOMEBREW_TAP_GITHUB_TOKEN is set
+# To enable: Add HOMEBREW_TAP_TOKEN secret in GitHub repository settings
 brews:
   - name: god
     repository:
@@ -52,4 +54,6 @@ brews:
     homepage: https://github.com/nicklasos/god
     description: "A vim-inspired TUI for managing supervisord processes"
     license: MIT
+    # Skip if token is not set (empty string evaluates to false)
+    skip_upload: "{{ not .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
 
