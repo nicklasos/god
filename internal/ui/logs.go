@@ -117,8 +117,15 @@ func (m *LogsModel) renderErrorLog() string {
 		lines = append(lines, valueStyle.Foreground(subtleColor).Render("No error log available"))
 	} else {
 		lines = append(lines, "")
+		// Calculate max line width (account for padding and borders)
+		maxLineWidth := m.width - 6 // Account for borders (2) and padding (4)
+		if maxLineWidth < 10 {
+			maxLineWidth = 10 // Minimum width
+		}
 		for _, line := range m.errorLog {
-			lines = append(lines, valueStyle.Foreground(errorColor).Render(line))
+			// Truncate long lines instead of wrapping
+			truncated := truncateLine(line, maxLineWidth)
+			lines = append(lines, valueStyle.Foreground(errorColor).Render(truncated))
 		}
 	}
 
@@ -136,11 +143,39 @@ func (m *LogsModel) renderStdoutLog() string {
 		lines = append(lines, valueStyle.Foreground(subtleColor).Render("No stdout log available"))
 	} else {
 		lines = append(lines, "")
+		// Calculate max line width (account for padding and borders)
+		maxLineWidth := m.width - 6 // Account for borders (2) and padding (4)
+		if maxLineWidth < 10 {
+			maxLineWidth = 10 // Minimum width
+		}
 		for _, line := range m.stdoutLog {
-			lines = append(lines, valueStyle.Render(line))
+			// Truncate long lines instead of wrapping
+			truncated := truncateLine(line, maxLineWidth)
+			lines = append(lines, valueStyle.Render(truncated))
 		}
 	}
 
 	content := strings.Join(lines, "\n")
 	return logPanelStyle.Width(m.width).Height(m.stdoutHeight).Render(content)
+}
+
+// truncateLine truncates a line to fit within maxWidth, adding "..." if truncated
+func truncateLine(line string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return ""
+	}
+
+	// Count runes (not bytes) for proper display width
+	lineRunes := []rune(line)
+	if len(lineRunes) <= maxWidth {
+		return line
+	}
+
+	// Truncate and add ellipsis
+	if maxWidth <= 3 {
+		return "..."
+	}
+
+	truncated := string(lineRunes[:maxWidth-3]) + "..."
+	return truncated
 }

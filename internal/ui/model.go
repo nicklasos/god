@@ -468,14 +468,14 @@ func (m *Model) updateSizes() {
 		availableHeight = 6 // Absolute minimum
 	}
 
-	// Make left panel take up ~45% of screen width, but ensure it fits
+	// Make left panel take up ~35% of screen width, but ensure it fits
 	// Account for borders (2 chars each side = 4 total) and gap (1 char)
-	listWidth := (m.width - 5) * 45 / 100 // Subtract 5 for borders and gap
+	listWidth := (m.width - 5) * 35 / 100 // Subtract 5 for borders and gap
 	if listWidth < 25 {
 		listWidth = 25 // Minimum width
 	}
-	if listWidth > (m.width-5)*50/100 {
-		listWidth = (m.width - 5) * 50 / 100 // Max 50% of available space
+	if listWidth > (m.width-5)*40/100 {
+		listWidth = (m.width - 5) * 40 / 100 // Max 40% of available space
 	}
 
 	// Calculate right panel width - ensure it fits
