@@ -6,7 +6,7 @@ A vim-inspired terminal user interface (TUI) for managing supervisord processes.
 
 ## Features
 
-- **Three-panel interface**: Browse processes on the left, view details and logs on the right
+- **Two-panel interface**: Browse processes on the left, view details and logs on the right
 - **Vim-like keybindings**: Navigate with `j`/`k`, search with `/`, and more
 - **Process management**: Start, stop, restart processes with hotkeys
 - **Full CRUD operations**: Add, edit, and delete supervisord process configurations
