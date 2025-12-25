@@ -28,6 +28,9 @@ const (
 // refreshMsg is sent periodically to refresh process status
 type refreshMsg struct{}
 
+// clearStatusMsg clears the status message
+type clearStatusMsg struct{}
+
 // Model represents the main application model
 type Model struct {
 	listModel   *ListModel
@@ -43,9 +46,10 @@ type Model struct {
 	searchInput   textinput.Model
 	deleteConfirm bool
 
-	width  int
-	height int
-	err    error
+	width     int
+	height    int
+	err       error
+	statusMsg string // Temporary status message (e.g., "Stopping process...")
 }
 
 // InitialModel creates the initial model with auto-detected config
@@ -321,34 +325,46 @@ func (m *Model) handleListKeyPress(msg tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
 	case "s":
 		proc := m.listModel.GetSelected()
 		if proc != nil {
+			statusCmd := m.setStatusMsg(fmt.Sprintf("Starting %s...", proc.Name))
 			if err := m.client.Start(proc.Name); err != nil {
 				m.err = err
+				statusCmd = m.setStatusMsg(fmt.Sprintf("Failed to start %s", proc.Name))
 			} else {
+				statusCmd = m.setStatusMsg(fmt.Sprintf("Started %s", proc.Name))
 				// Refresh immediately
 				m.refreshProcesses()
 			}
+			return true, m, statusCmd
 		}
 		return true, m, nil
 
 	case "x":
 		proc := m.listModel.GetSelected()
 		if proc != nil {
+			statusCmd := m.setStatusMsg(fmt.Sprintf("Stopping %s...", proc.Name))
 			if err := m.client.Stop(proc.Name); err != nil {
 				m.err = err
+				statusCmd = m.setStatusMsg(fmt.Sprintf("Failed to stop %s", proc.Name))
 			} else {
+				statusCmd = m.setStatusMsg(fmt.Sprintf("Stopped %s", proc.Name))
 				m.refreshProcesses()
 			}
+			return true, m, statusCmd
 		}
 		return true, m, nil
 
 	case "r":
 		proc := m.listModel.GetSelected()
 		if proc != nil {
+			statusCmd := m.setStatusMsg(fmt.Sprintf("Restarting %s...", proc.Name))
 			if err := m.client.Restart(proc.Name); err != nil {
 				m.err = err
+				statusCmd = m.setStatusMsg(fmt.Sprintf("Failed to restart %s", proc.Name))
 			} else {
+				statusCmd = m.setStatusMsg(fmt.Sprintf("Restarted %s", proc.Name))
 				m.refreshProcesses()
 			}
+			return true, m, statusCmd
 		}
 		return true, m, nil
 
@@ -468,14 +484,14 @@ func (m *Model) updateSizes() {
 		availableHeight = 6 // Absolute minimum
 	}
 
-	// Make left panel take up ~35% of screen width, but ensure it fits
+	// Make left panel take up ~30% of screen width, but ensure it fits
 	// Account for borders (2 chars each side = 4 total) and gap (1 char)
-	listWidth := (m.width - 5) * 35 / 100 // Subtract 5 for borders and gap
+	listWidth := (m.width - 5) * 30 / 100 // Subtract 5 for borders and gap
 	if listWidth < 25 {
 		listWidth = 25 // Minimum width
 	}
-	if listWidth > (m.width-5)*40/100 {
-		listWidth = (m.width - 5) * 40 / 100 // Max 40% of available space
+	if listWidth > (m.width-5)*35/100 {
+		listWidth = (m.width - 5) * 35 / 100 // Max 35% of available space
 	}
 
 	// Calculate right panel width - ensure it fits
@@ -485,24 +501,25 @@ func (m *Model) updateSizes() {
 		listWidth = m.width - rightWidth - 5
 	}
 
-	// Split right panel height: info panel gets more space, logs get minimal (3-4 lines)
+	// Split right panel height: info panel gets more space, logs get minimal (3 lines)
 	// Account for borders: each panel has 2 lines of border (top+bottom)
 	borderOverhead := 6 // 3 panels * 2 borders each
 
 	// Available space for actual content (after borders)
 	contentSpace := availableHeight - borderOverhead
-	if contentSpace < 8 {
-		contentSpace = 8 // Minimum for info + 2 small log panels
+	if contentSpace < 7 {
+		contentSpace = 7 // Minimum for info + 2 small log panels
 	}
 
-	// Info panel: ~50% of content space
-	infoHeight := contentSpace * 50 / 100
+	// Info panel: ~55% of content space
+	infoHeight := contentSpace * 55 / 100
 	if infoHeight < 4 {
 		infoHeight = 4
 	}
 
-	// Log panels: fixed at 4 lines each (3 lines content + 1 for title)
-	logContentHeight := 4
+	// Log panels: fixed at 3 lines each (2 lines content + 1 for title)
+	// This matches logLines constant (3 lines)
+	logContentHeight := 3
 	logHeight := logContentHeight
 
 	// Ensure total fits
@@ -513,8 +530,8 @@ func (m *Model) updateSizes() {
 		if infoHeight < 3 {
 			infoHeight = 3
 			logHeight = (contentSpace - infoHeight) / 2
-			if logHeight < 3 {
-				logHeight = 3
+			if logHeight < 2 {
+				logHeight = 2
 			}
 		}
 	}
@@ -719,6 +736,12 @@ func (m *Model) renderList() string {
 	if m.width < 100 {
 		statusText = "j/k: nav | s: start | x: stop | r: restart | a: add | e: edit | d: del | l/L: logs | q: quit"
 	}
+
+	// Add status message if present
+	if m.statusMsg != "" {
+		statusText = m.statusMsg + " | " + statusText
+	}
+
 	status := lipgloss.NewStyle().
 		Foreground(fgColor).
 		Padding(0, 1).
@@ -802,4 +825,13 @@ func (m *Model) renderDeleteConfirm() string {
 			warningStyle.Render(msg) + "\n\n" +
 			helpStyle.Render("y: confirm | n/Esc: cancel"),
 	)
+}
+
+// setStatusMsg sets a temporary status message that will be cleared after 3 seconds
+func (m *Model) setStatusMsg(msg string) tea.Cmd {
+	m.statusMsg = msg
+	// Return a command to clear the message after 3 seconds
+	return tea.Tick(3*time.Second, func(time.Time) tea.Msg {
+		return clearStatusMsg{}
+	})
 }

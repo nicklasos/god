@@ -43,14 +43,11 @@ func (c *Client) GetStatus() ([]*Process, error) {
 
 // parseStatus parses the output of `supervisorctl status`
 // Format: process_name                    RUNNING   pid 12345, uptime 0:05:23
+// or:     process_name                    RUNNING   pid 12345, uptime 7 days, 10:25:47
+// or:     process_name                    STOPPED   Dec 25 08:28 PM
 func (c *Client) parseStatus(output string) ([]*Process, error) {
 	var processes []*Process
 	scanner := bufio.NewScanner(strings.NewReader(output))
-
-	// Regex to parse status line
-	// Example: "process_name                    RUNNING   pid 12345, uptime 0:05:23"
-	// or: "process_name                    STOPPED   Nov 01 10:00 AM"
-	statusRe := regexp.MustCompile(`^(\S+)\s+(\w+)\s+(?:pid\s+(\d+),\s+uptime\s+([^\s]+(?:\s+[^\s]+)*)|(.+))$`)
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -58,38 +55,37 @@ func (c *Client) parseStatus(output string) ([]*Process, error) {
 			continue
 		}
 
-		matches := statusRe.FindStringSubmatch(line)
-		if len(matches) < 3 {
-			// Try simpler parsing
-			parts := strings.Fields(line)
-			if len(parts) >= 2 {
-				name := parts[0]
-				status := parts[1]
-				process := &Process{
-					Name:   name,
-					Status: status,
-					PID:    0,
-					Uptime: 0,
-				}
-				processes = append(processes, process)
-			}
+		// Split by whitespace to get parts
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
 			continue
 		}
 
-		name := matches[1]
-		status := matches[2]
+		name := parts[0]
+		status := parts[1]
 		pid := 0
 		var uptime time.Duration
 
-		if matches[3] != "" {
-			// Has PID and uptime
-			if p, err := strconv.Atoi(matches[3]); err == nil {
-				pid = p
+		// Check if this is a running process with PID and uptime
+		// Look for "pid" keyword in the line
+		if strings.Contains(line, "pid") {
+			// Extract PID: look for "pid" followed by a number
+			pidRe := regexp.MustCompile(`pid\s+(\d+)`)
+			pidMatches := pidRe.FindStringSubmatch(line)
+			if len(pidMatches) > 1 {
+				if p, err := strconv.Atoi(pidMatches[1]); err == nil {
+					pid = p
+				}
 			}
-			if matches[4] != "" {
-				uptime = c.parseUptime(matches[4])
+
+			// Extract uptime: look for "uptime" followed by the time string
+			uptimeRe := regexp.MustCompile(`uptime\s+(.+)`)
+			uptimeMatches := uptimeRe.FindStringSubmatch(line)
+			if len(uptimeMatches) > 1 {
+				uptime = c.parseUptime(uptimeMatches[1])
 			}
 		}
+		// If no PID found, it's likely a stopped process - just use status
 
 		process := &Process{
 			Name:   name,
@@ -103,20 +99,41 @@ func (c *Client) parseStatus(output string) ([]*Process, error) {
 	return processes, scanner.Err()
 }
 
-// parseUptime parses uptime string like "0:05:23" or "1:23:45"
+// parseUptime parses uptime string like "0:05:23", "1:23:45", or "7 days, 10:25:47"
 func (c *Client) parseUptime(uptimeStr string) time.Duration {
-	parts := strings.Split(uptimeStr, ":")
-	if len(parts) != 3 {
-		return 0
+	uptimeStr = strings.TrimSpace(uptimeStr)
+
+	// Handle "X days, H:MM:SS" format
+	if strings.Contains(uptimeStr, "days") {
+		// Extract days and time
+		daysRe := regexp.MustCompile(`(\d+)\s+days?,\s+(\d+):(\d+):(\d+)`)
+		matches := daysRe.FindStringSubmatch(uptimeStr)
+		if len(matches) == 5 {
+			days, _ := strconv.Atoi(matches[1])
+			hours, _ := strconv.Atoi(matches[2])
+			minutes, _ := strconv.Atoi(matches[3])
+			seconds, _ := strconv.Atoi(matches[4])
+
+			return time.Duration(days)*24*time.Hour +
+				time.Duration(hours)*time.Hour +
+				time.Duration(minutes)*time.Minute +
+				time.Duration(seconds)*time.Second
+		}
 	}
 
-	hours, _ := strconv.Atoi(parts[0])
-	minutes, _ := strconv.Atoi(parts[1])
-	seconds, _ := strconv.Atoi(parts[2])
+	// Handle "H:MM:SS" format
+	parts := strings.Split(uptimeStr, ":")
+	if len(parts) == 3 {
+		hours, _ := strconv.Atoi(parts[0])
+		minutes, _ := strconv.Atoi(parts[1])
+		seconds, _ := strconv.Atoi(parts[2])
 
-	return time.Duration(hours)*time.Hour +
-		time.Duration(minutes)*time.Minute +
-		time.Duration(seconds)*time.Second
+		return time.Duration(hours)*time.Hour +
+			time.Duration(minutes)*time.Minute +
+			time.Duration(seconds)*time.Second
+	}
+
+	return 0
 }
 
 // DetectSocketPath tries to detect the socket path from the supervisord config
