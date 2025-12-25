@@ -75,6 +75,18 @@ Download the `.zip` file from [releases](https://github.com/nicklasos/god/releas
 go install github.com/nicklasos/supervisord-tui@latest
 ```
 
+**Note:** When installed via `go install`, the binary is named `supervisord-tui` (Go uses the module path name). To use `god` instead, create an alias or symlink:
+
+```bash
+# Create an alias (add to ~/.bashrc or ~/.zshrc)
+alias god='supervisord-tui'
+
+# Or create a symlink
+ln -s $(which supervisord-tui) $GOPATH/bin/god
+# or if GOBIN is set:
+ln -s $(which supervisord-tui) $GOBIN/god
+```
+
 Make sure `$GOPATH/bin` or `$GOBIN` is in your PATH.
 
 ### Option 4: Build from Source
@@ -109,7 +121,7 @@ You can also specify the config file path:
 god -config /path/to/supervisord.conf
 ```
 
-Or if installed via `go install`:
+**Note:** If you installed via `go install`, use `supervisord-tui` instead of `god`:
 
 ```bash
 supervisord-tui -config /path/to/supervisord.conf
@@ -145,16 +157,18 @@ Simply run:
 god
 ```
 
-Or if installed via `go install`:
+**Note:** If you installed via `go install`, the binary is named `supervisord-tui`:
 
 ```bash
 supervisord-tui
 ```
 
-**Note:** You may need to run the application with `sudo` if your supervisord socket requires elevated permissions:
+You may need to run the application with `sudo` if your supervisord socket requires elevated permissions:
 
 ```bash
 sudo god
+# or if installed via go install:
+sudo supervisord-tui
 ```
 
 The application will:
