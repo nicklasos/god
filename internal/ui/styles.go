@@ -19,8 +19,7 @@ var (
 	panelStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(accentColor).
-			Padding(1, 2).
-			Margin(1, 0) // Add top margin to ensure borders are visible
+			Padding(1, 2)
 
 	listPanelStyle = panelStyle.Copy().
 			Width(40).

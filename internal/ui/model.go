@@ -166,6 +166,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Refresh process status
 		processes, err := m.client.GetStatus()
 		if err == nil {
+			// Reload config to ensure we have the latest
+			if newConfig, configErr := supervisor.LoadConfig(m.configPath); configErr == nil {
+				m.config = newConfig
+			}
 			// Merge config with processes
 			for _, proc := range processes {
 				if cfg := m.config.GetProcessConfig(proc.Name); cfg != nil {
@@ -335,9 +339,31 @@ func (m *Model) handleListKeyPress(msg tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
 
 	case "e":
 		proc := m.listModel.GetSelected()
-		if proc != nil && proc.Config != nil {
-			m.mode = ModeEdit
-			m.editorModel.SetConfig(proc.Config)
+		if proc != nil {
+			if proc.Config != nil {
+				m.mode = ModeEdit
+				m.editorModel.SetConfig(proc.Config)
+			} else {
+				// If no config, create a new one from template
+				// This allows editing processes that don't have configs loaded
+				templateConfig := &supervisor.ProcessConfig{
+					Name:                  proc.Name,
+					Environment:           make(map[string]string),
+					Autostart:             true,
+					Autorestart:           true,
+					StartSecs:             10,
+					StartRetries:          3,
+					StdoutLogfileMaxBytes: 1024 * 1024, // 1MB
+					StdoutLogfileBackups:  10,
+					StderrLogfileMaxBytes: 1024 * 1024, // 1MB
+					StderrLogfileBackups:  10,
+					Priority:              999,
+					StopSignal:            "TERM",
+					StopWaitSecs:          30,
+				}
+				m.mode = ModeEdit
+				m.editorModel.SetConfig(templateConfig)
+			}
 		}
 		return true, m, nil
 
@@ -407,19 +433,30 @@ func (m *Model) updateSizes() {
 		availableHeight = 6 // Absolute minimum
 	}
 
-	// Make left panel take up ~45% of screen width for better balance
-	listWidth := m.width * 45 / 100
-	if listWidth < 28 {
-		listWidth = 28 // Minimum width
+	// Make left panel take up ~50% of screen width for better balance
+	listWidth := m.width * 50 / 100
+	if listWidth < 30 {
+		listWidth = 30 // Minimum width
 	}
-	if listWidth > 48 {
-		listWidth = 48 // Maximum width for very wide screens
+	// Allow it to grow up to 55% on larger screens, but ensure right panel has enough space
+	maxListWidth := m.width * 55 / 100
+	if listWidth > maxListWidth {
+		listWidth = maxListWidth
 	}
 
-	// Calculate right panel width - account for gap
-	rightWidth := m.width - listWidth - 2
+	// Calculate right panel width - account for gap and ensure it fits
+	// Account for: list panel borders (2 chars), gap (1 char), and safety margin
+	rightWidth := m.width - listWidth - 4 // More conservative: account for borders
 	if rightWidth < 20 {
 		rightWidth = 20 // Minimum width
+	}
+	// Ensure total doesn't exceed screen width
+	if listWidth+rightWidth+4 > m.width {
+		rightWidth = m.width - listWidth - 4
+		if rightWidth < 20 {
+			rightWidth = 20
+			listWidth = m.width - rightWidth - 4
+		}
 	}
 
 	// Split right panel height: ensure everything ALWAYS fits
@@ -651,11 +688,13 @@ func (m *Model) renderList() string {
 	)
 
 	// Join left and right with minimal gap
+	// Constrain width to ensure it fits on screen
 	content := lipgloss.JoinHorizontal(lipgloss.Top,
 		listView,
 		lipgloss.NewStyle().Width(1).Render(""), // Minimal gap
 		rightView,
 	)
+	content = lipgloss.NewStyle().MarginTop(1).MaxWidth(m.width).Render(content)
 
 	// Shorten status bar for smaller screens
 	statusText := "j/k: nav | /: search | s: start | x: stop | r: restart | a: add | e: edit | d: del | l: stdout | L: stderr | q: quit"
@@ -702,14 +741,13 @@ func (m *Model) renderSearch() string {
 	)
 
 	// Join left and right with minimal gap
+	// Constrain width to ensure it fits on screen
 	content := lipgloss.JoinHorizontal(lipgloss.Top,
 		listView,
 		lipgloss.NewStyle().Width(1).Render(""), // Minimal gap
 		rightView,
 	)
-
-	// Add top margin to ensure borders are visible
-	content = lipgloss.NewStyle().MarginTop(1).Render(content)
+	content = lipgloss.NewStyle().MarginTop(1).MaxWidth(m.width).Render(content)
 
 	searchQuery := m.searchInput.Value()
 	if searchQuery == "" {
