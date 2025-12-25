@@ -57,6 +57,15 @@ sudo mv god /usr/local/bin/
 rm god.tar.gz
 ```
 
+**Note:** If `/latest/download/` doesn't work, use the specific version URL:
+```bash
+# Replace v1.0.0 with the desired version
+curl -L https://github.com/nicklasos/god/releases/download/v1.0.0/god_Linux_x86_64.tar.gz -o god.tar.gz
+tar xzf god.tar.gz
+sudo mv god /usr/local/bin/
+rm god.tar.gz
+```
+
 **Windows:**
 Download the `.zip` file from [releases](https://github.com/nicklasos/god/releases) and extract it to a directory in your PATH.
 
@@ -133,7 +142,19 @@ The application will show helpful error messages if these sections are missing.
 Simply run:
 
 ```bash
+god
+```
+
+Or if installed via `go install`:
+
+```bash
 supervisord-tui
+```
+
+**Note:** You may need to run the application with `sudo` if your supervisord socket requires elevated permissions:
+
+```bash
+sudo god
 ```
 
 The application will:
