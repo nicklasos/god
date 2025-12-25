@@ -134,17 +134,18 @@ func InitialModelWithConfig(configPath string) (*Model, error) {
 	searchInput.Placeholder = "Search..."
 
 	model := &Model{
-		listModel:     listModel,
-		detailModel:   detailModel,
-		editorModel:   editorModel,
-		client:        client,
-		config:        config,
-		configPath:    configPath,
-		processes:     processes,
-		mode:          ModeList,
-		searchInput:   searchInput,
-		deleteConfirm: false,
-		err:           err, // Store error if status fetch failed
+		listModel:      listModel,
+		detailModel:    detailModel,
+		editorModel:    editorModel,
+		client:         client,
+		config:         config,
+		configPath:     configPath,
+		processes:      processes,
+		mode:           ModeList,
+		searchInput:    searchInput,
+		deleteConfirm:  false,
+		err:            err, // Store error if status fetch failed
+		pendingActions: make(map[string]string),
 	}
 
 	// Set initial selected process

@@ -52,12 +52,12 @@ func (m *DetailModel) loadLogs() {
 
 	// Load error log
 	if m.process.Config.StderrLogfile != "" {
-		m.errorLog = readLastLines(m.process.Config.StderrLogfile, 3)
+		m.errorLog = readLastLines(m.process.Config.StderrLogfile, 5)
 	}
 
 	// Load stdout log
 	if m.process.Config.StdoutLogfile != "" {
-		m.stdoutLog = readLastLines(m.process.Config.StdoutLogfile, 3)
+		m.stdoutLog = readLastLines(m.process.Config.StdoutLogfile, 5)
 	}
 }
 

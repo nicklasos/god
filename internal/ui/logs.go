@@ -10,7 +10,7 @@ import (
 	"github.com/nicklasos/supervisord-tui/internal/supervisor"
 )
 
-const logLines = 3 // Number of lines to show from each log (reduced for smaller screens)
+const logLines = 5 // Number of lines to show from each log
 
 // LogsModel represents the log sections (error and stdout)
 type LogsModel struct {
