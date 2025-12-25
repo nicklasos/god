@@ -42,14 +42,28 @@ func (c *Client) GetStatus() ([]*Process, error) {
 
 	// If we successfully parsed processes, return them (even if there was an error)
 	if len(processes) > 0 {
-		// If there's a stderr message, include it as a warning but don't fail
-		if stderrStr != "" && !strings.Contains(stderrStr, "does not include supervisorctl section") {
-			// Non-fatal warning in stderr, but we have valid processes
-			return processes, nil
-		}
-		// If there's a real error but we have processes, return processes with error
+		// Ignore exit status 3 or other non-fatal errors if we have processes
+		// Exit status 3 from supervisorctl often means "some processes are not running"
+		// which is normal and not an error condition
 		if err != nil {
-			return processes, err
+			// Check if it's a real error or just a warning
+			errStr := stderrStr
+			if errStr == "" {
+				errStr = stdoutStr
+			}
+			// If stderr has warnings but we have processes, ignore the error
+			if stderrStr != "" && !strings.Contains(stderrStr, "does not include supervisorctl section") {
+				// Non-fatal warning in stderr, but we have valid processes
+				return processes, nil
+			}
+			// Only return error if it's a real configuration/connection issue
+			if strings.Contains(errStr, "does not include supervisorctl section") ||
+				strings.Contains(errStr, "connection refused") ||
+				strings.Contains(errStr, "No such file") {
+				return processes, err
+			}
+			// For other errors (like exit status 3), ignore if we have processes
+			return processes, nil
 		}
 		return processes, nil
 	}

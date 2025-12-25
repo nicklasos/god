@@ -132,6 +132,8 @@ func GetStatusStyle(status string) lipgloss.Style {
 		return statusStartingStyle
 	case "STOPPING":
 		return statusStoppingStyle
+	case "RESTARTING":
+		return statusStoppingStyle // Use same style as STOPPING
 	case "FATAL":
 		return statusFatalStyle
 	case "EXITED":

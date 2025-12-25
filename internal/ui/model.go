@@ -31,11 +31,17 @@ type refreshMsg struct{}
 // clearStatusMsg clears the status message
 type clearStatusMsg struct{}
 
+// processActionMsg is sent when a process action completes
+type processActionMsg struct {
+	processName string
+	action      string // "start", "stop", "restart"
+	err         error
+}
+
 // Model represents the main application model
 type Model struct {
 	listModel   *ListModel
 	detailModel *DetailModel
-	logsModel   *LogsModel
 	editorModel *EditorModel
 	client      *supervisor.Client
 	config      *supervisor.Config
@@ -46,10 +52,11 @@ type Model struct {
 	searchInput   textinput.Model
 	deleteConfirm bool
 
-	width     int
-	height    int
-	err       error
-	statusMsg string // Temporary status message (e.g., "Stopping process...")
+	width          int
+	height         int
+	err            error
+	statusMsg      string            // Temporary status message (e.g., "Stopping process...")
+	pendingActions map[string]string // processName -> action (e.g., "STARTING", "STOPPING", "RESTARTING")
 }
 
 // InitialModel creates the initial model with auto-detected config
@@ -120,7 +127,6 @@ func InitialModelWithConfig(configPath string) (*Model, error) {
 	// Initialize models
 	listModel := NewListModel(processes)
 	detailModel := NewDetailModel()
-	logsModel := NewLogsModel()
 	editorModel := NewEditorModel()
 
 	// Initialize search input
@@ -130,7 +136,6 @@ func InitialModelWithConfig(configPath string) (*Model, error) {
 	model := &Model{
 		listModel:     listModel,
 		detailModel:   detailModel,
-		logsModel:     logsModel,
 		editorModel:   editorModel,
 		client:        client,
 		config:        config,
@@ -202,6 +207,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					proc.Config = cfg
 				}
 			}
+			// Apply pending actions to processes before displaying
+			for _, proc := range processes {
+				if pendingStatus, ok := m.pendingActions[proc.Name]; ok {
+					proc.Status = pendingStatus
+				}
+			}
 			m.processes = processes
 			m.listModel.SetProcesses(processes)
 			m.updateDetailView()
@@ -213,6 +224,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = nil // Clear error on successful refresh
 		}
 		return m, m.refreshTick()
+
+	case processActionMsg:
+		// Handle async process action completion
+		if msg.err != nil {
+			m.err = msg.err
+			m.setStatusMsg(fmt.Sprintf("Failed to %s %s", msg.action, msg.processName))
+			// Remove pending action on error
+			delete(m.pendingActions, msg.processName)
+		} else {
+			m.setStatusMsg(fmt.Sprintf("%s %s", strings.Title(msg.action), msg.processName))
+			// Remove pending action
+			delete(m.pendingActions, msg.processName)
+			// Refresh immediately
+			m.refreshProcesses()
+		}
+		return m, nil
 
 	case tea.KeyMsg:
 		handled, model, keyCmd := m.handleKeyPress(msg)
@@ -329,46 +356,33 @@ func (m *Model) handleListKeyPress(msg tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
 	case "s":
 		proc := m.listModel.GetSelected()
 		if proc != nil {
-			statusCmd := m.setStatusMsg(fmt.Sprintf("Starting %s...", proc.Name))
-			if err := m.client.Start(proc.Name); err != nil {
-				m.err = err
-				statusCmd = m.setStatusMsg(fmt.Sprintf("Failed to start %s", proc.Name))
-			} else {
-				statusCmd = m.setStatusMsg(fmt.Sprintf("Started %s", proc.Name))
-				// Refresh immediately
-				m.refreshProcesses()
-			}
-			return true, m, statusCmd
+			// Set pending action to show STARTING status
+			m.pendingActions[proc.Name] = "STARTING"
+			m.setStatusMsg(fmt.Sprintf("Starting %s...", proc.Name))
+			// Start async operation
+			return true, m, m.startProcessAsync(proc.Name)
 		}
 		return true, m, nil
 
 	case "x":
 		proc := m.listModel.GetSelected()
 		if proc != nil {
-			statusCmd := m.setStatusMsg(fmt.Sprintf("Stopping %s...", proc.Name))
-			if err := m.client.Stop(proc.Name); err != nil {
-				m.err = err
-				statusCmd = m.setStatusMsg(fmt.Sprintf("Failed to stop %s", proc.Name))
-			} else {
-				statusCmd = m.setStatusMsg(fmt.Sprintf("Stopped %s", proc.Name))
-				m.refreshProcesses()
-			}
-			return true, m, statusCmd
+			// Set pending action to show STOPPING status
+			m.pendingActions[proc.Name] = "STOPPING"
+			m.setStatusMsg(fmt.Sprintf("Stopping %s...", proc.Name))
+			// Start async operation
+			return true, m, m.stopProcessAsync(proc.Name)
 		}
 		return true, m, nil
 
 	case "r":
 		proc := m.listModel.GetSelected()
 		if proc != nil {
-			statusCmd := m.setStatusMsg(fmt.Sprintf("Restarting %s...", proc.Name))
-			if err := m.client.Restart(proc.Name); err != nil {
-				m.err = err
-				statusCmd = m.setStatusMsg(fmt.Sprintf("Failed to restart %s", proc.Name))
-			} else {
-				statusCmd = m.setStatusMsg(fmt.Sprintf("Restarted %s", proc.Name))
-				m.refreshProcesses()
-			}
-			return true, m, statusCmd
+			// Set pending action to show RESTARTING status
+			m.pendingActions[proc.Name] = "RESTARTING"
+			m.setStatusMsg(fmt.Sprintf("Restarting %s...", proc.Name))
+			// Start async operation
+			return true, m, m.restartProcessAsync(proc.Name)
 		}
 		return true, m, nil
 
@@ -456,6 +470,10 @@ func (m *Model) refreshProcesses() {
 			if cfg != nil {
 				proc.Config = cfg
 			}
+			// Apply pending actions to preserve intermediate statuses
+			if pendingStatus, ok := m.pendingActions[proc.Name]; ok {
+				proc.Status = pendingStatus
+			}
 		}
 		m.processes = processes
 		m.listModel.SetProcesses(processes)
@@ -463,12 +481,11 @@ func (m *Model) refreshProcesses() {
 	}
 }
 
-// updateDetailView updates the detail and logs views with the currently selected process
+// updateDetailView updates the detail view with the currently selected process
 func (m *Model) updateDetailView() {
 	proc := m.listModel.GetSelected()
 	if proc != nil {
 		m.detailModel.SetProcess(proc)
-		m.logsModel.SetProcess(proc)
 	}
 }
 
@@ -505,49 +522,22 @@ func (m *Model) updateSizes() {
 		listWidth = m.width - rightWidth - 5
 	}
 
-	// Split right panel height: info panel gets more space, logs get minimal (3 lines)
+	// Both panels should have the same height (like example/gosshit)
 	// Account for borders: each panel has 2 lines of border (top+bottom)
-	borderOverhead := 6 // 3 panels * 2 borders each
+	borderOverhead := 2 // 1 panel * 2 borders
 
 	// Available space for actual content (after borders)
-	contentSpace := availableHeight - borderOverhead
-	if contentSpace < 7 {
-		contentSpace = 7 // Minimum for info + 2 small log panels
+	contentHeight := availableHeight - borderOverhead
+	if contentHeight < 6 {
+		contentHeight = 6 // Absolute minimum
 	}
 
-	// Info panel: ~55% of content space
-	infoHeight := contentSpace * 55 / 100
-	if infoHeight < 4 {
-		infoHeight = 4
-	}
+	// Both panels get the same height
+	panelHeight := contentHeight + 2 // +2 for borders
 
-	// Log panels: fixed at 3 lines each (2 lines content + 1 for title)
-	// This matches logLines constant (3 lines)
-	logContentHeight := 3
-	logHeight := logContentHeight
-
-	// Ensure total fits
-	totalContent := infoHeight + logHeight*2
-	if totalContent > contentSpace {
-		// Reduce info height if needed
-		infoHeight = contentSpace - logHeight*2
-		if infoHeight < 3 {
-			infoHeight = 3
-			logHeight = (contentSpace - infoHeight) / 2
-			if logHeight < 2 {
-				logHeight = 2
-			}
-		}
-	}
-
-	// Calculate total right panel height (including borders)
-	// Each panel: content + 2 borders
-	totalRightHeight := (infoHeight + 2) + (logHeight + 2) + (logHeight + 2)
-
-	// Set panel sizes
-	m.listModel.SetSize(listWidth, totalRightHeight)
-	m.detailModel.SetSize(rightWidth, infoHeight+2)           // +2 for borders
-	m.logsModel.SetSize(rightWidth, logHeight+2, logHeight+2) // +2 for borders
+	// Set panel sizes - same height for both
+	m.listModel.SetSize(listWidth, panelHeight)
+	m.detailModel.SetSize(rightWidth, panelHeight)
 	m.editorModel.SetSize(m.width-4, m.height-4)
 }
 
@@ -718,20 +708,11 @@ func (m *Model) View() string {
 func (m *Model) renderList() string {
 	listView := m.listModel.View()
 	detailView := m.detailModel.View()
-	logsView := m.logsModel.View()
 
-	// Join right panels vertically with minimal gap
-	rightView := lipgloss.JoinVertical(lipgloss.Left,
-		detailView,
-		logsView,
-	)
-
-	// Join left and right with minimal gap
-	// Constrain width to ensure it fits on screen
+	// Join left and right panels (same height, like example/gosshit)
 	content := lipgloss.JoinHorizontal(lipgloss.Top,
 		listView,
-		lipgloss.NewStyle().Width(1).Render(""), // Minimal gap
-		rightView,
+		detailView,
 	)
 	content = lipgloss.NewStyle().MarginTop(1).Width(m.width).Render(content)
 
@@ -777,20 +758,11 @@ func (m *Model) renderList() string {
 func (m *Model) renderSearch() string {
 	listView := m.listModel.View()
 	detailView := m.detailModel.View()
-	logsView := m.logsModel.View()
 
-	// Join right panels vertically with minimal gap
-	rightView := lipgloss.JoinVertical(lipgloss.Left,
-		detailView,
-		logsView,
-	)
-
-	// Join left and right with minimal gap
-	// Constrain width to ensure it fits on screen
+	// Join left and right panels (same height, like example/gosshit)
 	content := lipgloss.JoinHorizontal(lipgloss.Top,
 		listView,
-		lipgloss.NewStyle().Width(1).Render(""), // Minimal gap
-		rightView,
+		detailView,
 	)
 	content = lipgloss.NewStyle().MarginTop(1).Width(m.width).Render(content)
 
@@ -838,4 +810,40 @@ func (m *Model) setStatusMsg(msg string) tea.Cmd {
 	return tea.Tick(3*time.Second, func(time.Time) tea.Msg {
 		return clearStatusMsg{}
 	})
+}
+
+// startProcessAsync starts a process asynchronously
+func (m *Model) startProcessAsync(name string) tea.Cmd {
+	return func() tea.Msg {
+		err := m.client.Start(name)
+		return processActionMsg{
+			processName: name,
+			action:      "start",
+			err:         err,
+		}
+	}
+}
+
+// stopProcessAsync stops a process asynchronously
+func (m *Model) stopProcessAsync(name string) tea.Cmd {
+	return func() tea.Msg {
+		err := m.client.Stop(name)
+		return processActionMsg{
+			processName: name,
+			action:      "stop",
+			err:         err,
+		}
+	}
+}
+
+// restartProcessAsync restarts a process asynchronously
+func (m *Model) restartProcessAsync(name string) tea.Cmd {
+	return func() tea.Msg {
+		err := m.client.Restart(name)
+		return processActionMsg{
+			processName: name,
+			action:      "restart",
+			err:         err,
+		}
+	}
 }
