@@ -27,21 +27,30 @@ brew install nicklasos/tap/god
 
 Download the latest binary for your platform from the [releases page](https://github.com/nicklasos/god/releases).
 
-Visit the [releases page](https://github.com/nicklasos/god/releases) and download the appropriate archive for your platform:
-- **macOS Intel**: `god_*_Darwin_x86_64.tar.gz`
-- **macOS Apple Silicon**: `god_*_Darwin_arm64.tar.gz`
-- **Linux AMD64**: `god_*_Linux_x86_64.tar.gz`
-- **Linux ARM64**: `god_*_Linux_arm64.tar.gz`
-- **Windows**: `god_*_Windows_x86_64.zip`
-
-Then extract and install:
+**macOS:**
 ```bash
-# For tar.gz files
-tar xzf god_*.tar.gz
+# Intel Mac
+curl -L https://github.com/nicklasos/god/releases/latest/download/god_*_Darwin_x86_64.tar.gz | tar xz
 sudo mv god /usr/local/bin/
 
-# For Windows, extract the zip and add to PATH
+# Apple Silicon (M1/M2/M3)
+curl -L https://github.com/nicklasos/god/releases/latest/download/god_*_Darwin_arm64.tar.gz | tar xz
+sudo mv god /usr/local/bin/
 ```
+
+**Linux:**
+```bash
+# AMD64
+curl -L https://github.com/nicklasos/god/releases/latest/download/god_*_Linux_x86_64.tar.gz | tar xz
+sudo mv god /usr/local/bin/
+
+# ARM64
+curl -L https://github.com/nicklasos/god/releases/latest/download/god_*_Linux_arm64.tar.gz | tar xz
+sudo mv god /usr/local/bin/
+```
+
+**Windows:**
+Download the `.zip` file from [releases](https://github.com/nicklasos/god/releases) and extract it to a directory in your PATH.
 
 ### Option 3: Install with Go
 
@@ -230,23 +239,31 @@ make snapshot    # Create a snapshot build
 
 ## Creating Releases
 
-To create a new release:
+Releases are automated using GitHub Actions. To create a new release:
 
-1. Update the version in `main.go` (or use git tags)
-2. Create a git tag:
+1. Create and push a git tag:
    ```bash
    git tag -a v1.0.0 -m "Release v1.0.0"
    git push origin v1.0.0
    ```
-3. Run GoReleaser:
-   ```bash
-   make release
-   ```
 
-This will:
-- Build binaries for Linux (amd64, arm64), macOS (amd64, arm64), and Windows (amd64)
-- Create GitHub release with all binaries
-- Update the Homebrew tap (if `HOMEBREW_TAP_GITHUB_TOKEN` is set)
+2. GitHub Actions will automatically:
+   - Build binaries for Linux (amd64, arm64), macOS (amd64, arm64), and Windows (amd64)
+   - Create a GitHub release with all binaries
+   - Update the Homebrew tap (if `HOMEBREW_TAP_TOKEN` secret is configured)
+
+**Setting up GitHub Secrets:**
+
+For automatic Homebrew tap updates, add a secret in your GitHub repository:
+1. Go to Settings → Secrets and variables → Actions
+2. Add a new secret named `HOMEBREW_TAP_TOKEN` with your GitHub token (needs `repo` scope)
+
+**Local Release (Alternative):**
+
+If you want to create a release locally:
+```bash
+make release
+```
 
 For snapshot builds (no git tag required):
 ```bash
