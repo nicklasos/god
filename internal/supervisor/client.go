@@ -2,6 +2,7 @@ package supervisor
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -23,12 +24,45 @@ func NewClient() *Client {
 // GetStatus returns the status of all processes
 func (c *Client) GetStatus() ([]*Process, error) {
 	cmd := exec.Command("supervisorctl", "status")
-	output, err := cmd.CombinedOutput()
+
+	// Separate stdout and stderr to handle cases where stderr has warnings
+	// but stdout has valid process data
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+
+	// Always try to parse stdout, even if there's an error
+	// supervisorctl may write status to stdout and warnings/errors to stderr
+	stdoutStr := stdout.String()
+	stderrStr := stderr.String()
+
+	processes, parseErr := c.parseStatus(stdoutStr)
+
+	// If we successfully parsed processes, return them (even if there was an error)
+	if len(processes) > 0 {
+		// If there's a stderr message, include it as a warning but don't fail
+		if stderrStr != "" && !strings.Contains(stderrStr, "does not include supervisorctl section") {
+			// Non-fatal warning in stderr, but we have valid processes
+			return processes, nil
+		}
+		// If there's a real error but we have processes, return processes with error
+		if err != nil {
+			return processes, err
+		}
+		return processes, nil
+	}
+
+	// No processes parsed - check for actual errors
 	if err != nil {
-		// Check if it's a configuration error
-		errStr := string(output)
+		// Check stderr first, then stdout (in case error went to stdout)
+		errStr := stderrStr
+		if errStr == "" {
+			errStr = stdoutStr
+		}
+
 		if strings.Contains(errStr, "does not include supervisorctl section") {
-			// Try to detect socket path from config file
 			socketPath := DetectSocketPath()
 			return nil, fmt.Errorf("supervisord config is missing [supervisorctl] section.\n\nTo fix this, add the following to your supervisord config file:\n\n[supervisorctl]\nserverurl=%s\n\nOr if using TCP:\n[supervisorctl]\nserverurl=http://127.0.0.1:9001", socketPath)
 		}
@@ -38,7 +72,13 @@ func (c *Client) GetStatus() ([]*Process, error) {
 		return nil, fmt.Errorf("failed to get status: %s", errStr)
 	}
 
-	return c.parseStatus(string(output))
+	// Command succeeded but no processes parsed
+	if parseErr != nil {
+		return processes, parseErr
+	}
+
+	// No error, no processes - might be empty
+	return processes, nil
 }
 
 // parseStatus parses the output of `supervisorctl status`

@@ -179,7 +179,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case refreshMsg:
 		// Refresh process status
 		processes, err := m.client.GetStatus()
-		if err == nil {
+		// Always try to update processes, even if there's an error
+		// This allows showing processes even when there's a partial error
+		if len(processes) > 0 {
 			// Reload config to ensure we have the latest
 			if newConfig, configErr := supervisor.LoadConfig(m.configPath); configErr == nil {
 				m.config = newConfig
@@ -203,10 +205,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.processes = processes
 			m.listModel.SetProcesses(processes)
 			m.updateDetailView()
-			m.err = nil // Clear error on successful refresh
-		} else {
-			// Keep error for display
+		}
+		// Set error if present, but don't clear processes
+		if err != nil {
 			m.err = err
+		} else {
+			m.err = nil // Clear error on successful refresh
 		}
 		return m, m.refreshTick()
 
