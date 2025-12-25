@@ -96,9 +96,19 @@ func InitialModelWithConfig(configPath string) (*Model, error) {
 		// We'll set the error later in the model
 	}
 
-	// Merge config with processes
+	// Merge config with processes - try exact match first, then case-insensitive
 	for _, proc := range processes {
-		if cfg := config.GetProcessConfig(proc.Name); cfg != nil {
+		cfg := config.GetProcessConfig(proc.Name)
+		if cfg == nil {
+			// Try case-insensitive match
+			for _, prog := range config.Programs {
+				if strings.EqualFold(prog.Name, proc.Name) {
+					cfg = prog
+					break
+				}
+			}
+		}
+		if cfg != nil {
 			proc.Config = cfg
 		}
 	}
@@ -170,9 +180,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if newConfig, configErr := supervisor.LoadConfig(m.configPath); configErr == nil {
 				m.config = newConfig
 			}
-			// Merge config with processes
+			// Merge config with processes - try exact match first, then case-insensitive
 			for _, proc := range processes {
-				if cfg := m.config.GetProcessConfig(proc.Name); cfg != nil {
+				cfg := m.config.GetProcessConfig(proc.Name)
+				if cfg == nil {
+					// Try case-insensitive match
+					for _, prog := range m.config.Programs {
+						if strings.EqualFold(prog.Name, proc.Name) {
+							cfg = prog
+							break
+						}
+					}
+				}
+				if cfg != nil {
 					proc.Config = cfg
 				}
 			}
@@ -401,9 +421,19 @@ func (m *Model) refreshProcesses() {
 		if newConfig, configErr := supervisor.LoadConfig(m.configPath); configErr == nil {
 			m.config = newConfig
 		}
-		// Merge config with processes
+		// Merge config with processes - try exact match first, then case-insensitive
 		for _, proc := range processes {
-			if cfg := m.config.GetProcessConfig(proc.Name); cfg != nil {
+			cfg := m.config.GetProcessConfig(proc.Name)
+			if cfg == nil {
+				// Try case-insensitive match
+				for _, prog := range m.config.Programs {
+					if strings.EqualFold(prog.Name, proc.Name) {
+						cfg = prog
+						break
+					}
+				}
+			}
+			if cfg != nil {
 				proc.Config = cfg
 			}
 		}
@@ -438,82 +468,62 @@ func (m *Model) updateSizes() {
 		availableHeight = 6 // Absolute minimum
 	}
 
-	// Make left panel take up ~45% of screen width for better balance
-	listWidth := m.width * 45 / 100
-	if listWidth < 28 {
-		listWidth = 28 // Minimum width
+	// Make left panel take up ~45% of screen width, but ensure it fits
+	// Account for borders (2 chars each side = 4 total) and gap (1 char)
+	listWidth := (m.width - 5) * 45 / 100 // Subtract 5 for borders and gap
+	if listWidth < 25 {
+		listWidth = 25 // Minimum width
 	}
-	if listWidth > 48 {
-		listWidth = 48 // Maximum width for very wide screens
+	if listWidth > (m.width-5)*50/100 {
+		listWidth = (m.width - 5) * 50 / 100 // Max 50% of available space
 	}
 
-	// Calculate right panel width - account for gap and ensure it fits
-	// Account for: list panel borders (2 chars), gap (1 char), and safety margin
-	rightWidth := m.width - listWidth - 4 // More conservative: account for borders
+	// Calculate right panel width - ensure it fits
+	rightWidth := m.width - listWidth - 5 // Account for borders and gap
 	if rightWidth < 20 {
-		rightWidth = 20 // Minimum width
-	}
-	// Ensure total doesn't exceed screen width
-	if listWidth+rightWidth+4 > m.width {
-		rightWidth = m.width - listWidth - 4
-		if rightWidth < 20 {
-			rightWidth = 20
-			listWidth = m.width - rightWidth - 4
-		}
+		rightWidth = 20
+		listWidth = m.width - rightWidth - 5
 	}
 
-	// Split right panel height: ensure everything ALWAYS fits
+	// Split right panel height: info panel gets more space, logs get minimal (3-4 lines)
 	// Account for borders: each panel has 2 lines of border (top+bottom)
-	// So 3 panels = 6 lines of border overhead
-	borderOverhead := 6
+	borderOverhead := 6 // 3 panels * 2 borders each
 
 	// Available space for actual content (after borders)
 	contentSpace := availableHeight - borderOverhead
-	if contentSpace < 3 {
-		contentSpace = 3 // Absolute minimum
+	if contentSpace < 8 {
+		contentSpace = 8 // Minimum for info + 2 small log panels
 	}
 
-	// Split content space: 40% info, 30% each log
-	// But ensure we never exceed contentSpace
-	infoHeight := contentSpace * 40 / 100
-	logHeight := contentSpace * 30 / 100
+	// Info panel: ~50% of content space
+	infoHeight := contentSpace * 50 / 100
+	if infoHeight < 4 {
+		infoHeight = 4
+	}
 
-	// Verify total fits
+	// Log panels: fixed at 4 lines each (3 lines content + 1 for title)
+	logContentHeight := 4
+	logHeight := logContentHeight
+
+	// Ensure total fits
 	totalContent := infoHeight + logHeight*2
 	if totalContent > contentSpace {
-		// Scale down proportionally
-		scale := float64(contentSpace) / float64(totalContent)
-		infoHeight = int(float64(infoHeight) * scale)
-		logHeight = int(float64(logHeight) * scale)
-	}
-
-	// Set absolute minimums (very small)
-	if infoHeight < 3 {
-		infoHeight = 3
-	}
-	if logHeight < 2 {
-		logHeight = 2
-	}
-
-	// Final check: ensure total never exceeds
-	totalContent = infoHeight + logHeight*2
-	if totalContent > contentSpace {
-		// Emergency: divide remaining space equally
-		infoHeight = contentSpace / 3
-		logHeight = (contentSpace - infoHeight) / 2
-		if infoHeight < 2 {
-			infoHeight = 2
-		}
-		if logHeight < 2 {
-			logHeight = 2
+		// Reduce info height if needed
+		infoHeight = contentSpace - logHeight*2
+		if infoHeight < 3 {
+			infoHeight = 3
+			logHeight = (contentSpace - infoHeight) / 2
+			if logHeight < 3 {
+				logHeight = 3
+			}
 		}
 	}
 
-	// Calculate total right panel height to match left panel
-	// Right panel has: detail (infoHeight + 2 borders) + error log (logHeight + 2 borders) + stdout log (logHeight + 2 borders)
-	totalRightHeight := infoHeight + 2 + logHeight + 2 + logHeight + 2
+	// Calculate total right panel height (including borders)
+	// Each panel: content + 2 borders
+	totalRightHeight := (infoHeight + 2) + (logHeight + 2) + (logHeight + 2)
 
-	// Set left panel to match the total right panel height
+	// Set panel sizes
 	m.listModel.SetSize(listWidth, totalRightHeight)
 	m.detailModel.SetSize(rightWidth, infoHeight+2)           // +2 for borders
 	m.logsModel.SetSize(rightWidth, logHeight+2, logHeight+2) // +2 for borders
@@ -702,7 +712,7 @@ func (m *Model) renderList() string {
 		lipgloss.NewStyle().Width(1).Render(""), // Minimal gap
 		rightView,
 	)
-	content = lipgloss.NewStyle().MarginTop(1).MaxWidth(m.width).Render(content)
+	content = lipgloss.NewStyle().MarginTop(1).Width(m.width).Render(content)
 
 	// Shorten status bar for smaller screens
 	statusText := "j/k: nav | /: search | s: start | x: stop | r: restart | a: add | e: edit | d: del | l: stdout | L: stderr | q: quit"
@@ -755,7 +765,7 @@ func (m *Model) renderSearch() string {
 		lipgloss.NewStyle().Width(1).Render(""), // Minimal gap
 		rightView,
 	)
-	content = lipgloss.NewStyle().MarginTop(1).MaxWidth(m.width).Render(content)
+	content = lipgloss.NewStyle().MarginTop(1).Width(m.width).Render(content)
 
 	searchQuery := m.searchInput.Value()
 	if searchQuery == "" {

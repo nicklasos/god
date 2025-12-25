@@ -89,33 +89,72 @@ func getConfigFromSupervisorctl() string {
 }
 
 // LoadConfig loads and parses a supervisord config file
+// It also loads configs from /etc/supervisor/conf.d/ if they exist
 func LoadConfig(path string) (*Config, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open config file: %w", err)
-	}
-	defer file.Close()
-
 	config := &Config{
 		Path:     path,
 		Programs: []*ProcessConfig{},
 		RawLines: []string{},
 	}
 
+	// Load main config file
+	if err := loadConfigFile(path, config); err != nil {
+		return nil, err
+	}
+
+	// Also load configs from conf.d directory
+	confDirs := []string{
+		"/etc/supervisor/conf.d",
+		"/etc/supervisord.d",
+		filepath.Join(filepath.Dir(path), "conf.d"),
+	}
+
+	for _, confDir := range confDirs {
+		if err := loadConfigsFromDir(confDir, config); err == nil {
+			// Successfully loaded from this directory
+			break
+		}
+	}
+
+	return config, nil
+}
+
+// loadConfigFile loads a single config file
+func loadConfigFile(path string, config *Config) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("failed to open config file: %w", err)
+	}
+	defer file.Close()
+
 	scanner := bufio.NewScanner(file)
 	var currentProgram *ProcessConfig
 	var inProgramSection bool
 
-	lineNum := 0
 	for scanner.Scan() {
 		line := scanner.Text()
 		config.RawLines = append(config.RawLines, line)
-		lineNum++
 
 		trimmed := strings.TrimSpace(line)
 
 		// Skip empty lines and comments
 		if trimmed == "" || strings.HasPrefix(trimmed, ";") || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+
+		// Check for include directive
+		if strings.HasPrefix(trimmed, "files") || strings.HasPrefix(trimmed, "include") {
+			// Parse include pattern (e.g., "files = /etc/supervisor/conf.d/*.conf")
+			parts := strings.SplitN(trimmed, "=", 2)
+			if len(parts) == 2 {
+				pattern := strings.TrimSpace(parts[1])
+				// Remove quotes if present
+				pattern = strings.Trim(pattern, "\"'")
+				// Try to load from the pattern
+				if strings.Contains(pattern, "conf.d") {
+					loadConfigsFromDir("/etc/supervisor/conf.d", config)
+				}
+			}
 			continue
 		}
 
@@ -162,10 +201,43 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading config file: %w", err)
+		return fmt.Errorf("error reading config file: %w", err)
 	}
 
-	return config, nil
+	return nil
+}
+
+// loadConfigsFromDir loads all .conf files from a directory
+func loadConfigsFromDir(dirPath string, config *Config) error {
+	dir, err := os.Open(dirPath)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+
+	entries, err := dir.Readdir(-1)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		// Only load .conf files
+		if !strings.HasSuffix(entry.Name(), ".conf") {
+			continue
+		}
+
+		configPath := filepath.Join(dirPath, entry.Name())
+		if err := loadConfigFile(configPath, config); err != nil {
+			// Log error but continue loading other files
+			continue
+		}
+	}
+
+	return nil
 }
 
 // parseProgramLine parses a single line of program configuration
