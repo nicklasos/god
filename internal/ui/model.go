@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -62,6 +63,18 @@ func InitialModelWithConfig(configPath string) (*Model, error) {
 	// Verify config file exists
 	if _, err := os.Stat(configPath); err != nil {
 		return nil, fmt.Errorf("config file not found: %s", configPath)
+	}
+
+	// Validate config has required sections
+	valid, missing := supervisor.ValidateConfig(configPath)
+	if !valid {
+		// Try to detect socket path
+		socketPath := supervisor.DetectSocketPath()
+		// Remove unix:// prefix for the config file
+		cleanSocketPath := strings.TrimPrefix(socketPath, "unix://")
+		minimalConfig := supervisor.GenerateMinimalConfig(cleanSocketPath)
+		return nil, fmt.Errorf("supervisord config is missing required sections: %s\n\nYour config file needs these sections. Here's a minimal config to add:\n\n%s\n\nAdd this to the beginning of your config file: %s",
+			strings.Join(missing, ", "), minimalConfig, configPath)
 	}
 
 	// Load config
@@ -339,7 +352,14 @@ func (m *Model) handleListKeyPress(msg tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
 	case "l":
 		proc := m.listModel.GetSelected()
 		if proc != nil && proc.Config != nil {
-			m.viewLogs(proc)
+			m.viewLogs(proc, "stdout")
+		}
+		return true, m, nil
+
+	case "L":
+		proc := m.listModel.GetSelected()
+		if proc != nil && proc.Config != nil {
+			m.viewLogs(proc, "stderr")
 		}
 		return true, m, nil
 	}
@@ -373,71 +393,83 @@ func (m *Model) updateDetailView() {
 
 // updateSizes updates the sizes of all UI components
 func (m *Model) updateSizes() {
-	// Account for status bar (1 line) and error message if present (1-2 lines)
+	// Account for status bar (1 line) and error message if present
 	statusBarHeight := 1
 	errorHeight := 0
 	if m.err != nil {
 		errorHeight = 2 // Error message takes ~2 lines
 	}
-	contentHeight := m.height - statusBarHeight - errorHeight - 1 // -1 for padding
-	if contentHeight < 10 {
-		contentHeight = 10 // Minimum height
+
+	// Calculate available height - be VERY conservative
+	// Account for: status bar, error message, padding, and safety margin
+	availableHeight := m.height - statusBarHeight - errorHeight - 4
+	if availableHeight < 6 {
+		availableHeight = 6 // Absolute minimum
 	}
 
-	// Responsive list width: smaller on narrow screens
-	// Make left panel slightly larger to balance with right panel
-	listWidth := 38
-	if m.width > 120 {
-		listWidth = 42
-	} else if m.width < 90 {
-		listWidth = 32
-	} else if m.width < 70 {
-		listWidth = 28
+	// Make left panel take up ~45% of screen width for better balance
+	listWidth := m.width * 45 / 100
+	if listWidth < 28 {
+		listWidth = 28 // Minimum width
+	}
+	if listWidth > 48 {
+		listWidth = 48 // Maximum width for very wide screens
 	}
 
-	// Calculate right panel width
-	// Account for: list width, gap between panels (1), borders and padding
-	rightWidth := m.width - listWidth - 6
-	if rightWidth < 25 {
-		rightWidth = 25 // Minimum width
+	// Calculate right panel width - account for gap
+	rightWidth := m.width - listWidth - 2
+	if rightWidth < 20 {
+		rightWidth = 20 // Minimum width
 	}
 
-	// Split right panel: 35% info, 32.5% error log, 32.5% stdout log
-	// Make everything more compact for smaller screens
-	infoHeight := contentHeight * 35 / 100
-	if infoHeight < 6 {
-		infoHeight = 6
-	}
-	// Logs get less space - smaller panels
-	logHeight := contentHeight * 32 / 100
-	if logHeight < 4 {
-		logHeight = 4
+	// Split right panel height: ensure everything ALWAYS fits
+	// Account for borders: each panel has 2 lines of border (top+bottom)
+	// So 3 panels = 6 lines of border overhead
+	borderOverhead := 6
+
+	// Available space for actual content (after borders)
+	contentSpace := availableHeight - borderOverhead
+	if contentSpace < 3 {
+		contentSpace = 3 // Absolute minimum
 	}
 
-	// Adjust if total exceeds available space
-	totalRightHeight := infoHeight + logHeight*2
-	if totalRightHeight > contentHeight {
-		// Very small screen - make everything fit
-		// Reserve minimum space for logs (4 lines each = 8 total)
-		minLogSpace := 8
-		if contentHeight < minLogSpace+6 {
-			// Extremely small - just fit what we can
-			infoHeight = contentHeight / 3
-			logHeight = (contentHeight - infoHeight) / 2
-		} else {
-			// Reduce info panel to fit
-			infoHeight = contentHeight - minLogSpace
-			logHeight = minLogSpace / 2
+	// Split content space: 40% info, 30% each log
+	// But ensure we never exceed contentSpace
+	infoHeight := contentSpace * 40 / 100
+	logHeight := contentSpace * 30 / 100
+
+	// Verify total fits
+	totalContent := infoHeight + logHeight*2
+	if totalContent > contentSpace {
+		// Scale down proportionally
+		scale := float64(contentSpace) / float64(totalContent)
+		infoHeight = int(float64(infoHeight) * scale)
+		logHeight = int(float64(logHeight) * scale)
+	}
+
+	// Set absolute minimums (very small)
+	if infoHeight < 3 {
+		infoHeight = 3
+	}
+	if logHeight < 2 {
+		logHeight = 2
+	}
+
+	// Final check: ensure total never exceeds
+	totalContent = infoHeight + logHeight*2
+	if totalContent > contentSpace {
+		// Emergency: divide remaining space equally
+		infoHeight = contentSpace / 3
+		logHeight = (contentSpace - infoHeight) / 2
+		if infoHeight < 2 {
+			infoHeight = 2
 		}
-		if infoHeight < 5 {
-			infoHeight = 5
-		}
-		if logHeight < 3 {
-			logHeight = 3
+		if logHeight < 2 {
+			logHeight = 2
 		}
 	}
 
-	m.listModel.SetSize(listWidth, contentHeight)
+	m.listModel.SetSize(listWidth, availableHeight)
 	m.detailModel.SetSize(rightWidth, infoHeight)
 	m.logsModel.SetSize(rightWidth, logHeight, logHeight)
 	m.editorModel.SetSize(m.width-4, m.height-4)
@@ -559,14 +591,16 @@ func (m *Model) confirmDelete() (tea.Model, tea.Cmd) {
 }
 
 // viewLogs opens the log file in the default editor
-func (m *Model) viewLogs(proc *supervisor.Process) {
+// logType can be "stdout" or "stderr"
+func (m *Model) viewLogs(proc *supervisor.Process, logType string) {
 	if proc.Config == nil {
 		return
 	}
 
-	// Determine which log to open (prefer stderr, fallback to stdout)
-	logFile := proc.Config.StderrLogfile
-	if logFile == "" {
+	var logFile string
+	if logType == "stderr" {
+		logFile = proc.Config.StderrLogfile
+	} else {
 		logFile = proc.Config.StdoutLogfile
 	}
 
@@ -624,9 +658,9 @@ func (m *Model) renderList() string {
 	)
 
 	// Shorten status bar for smaller screens
-	statusText := "j/k: nav | /: search | s: start | x: stop | r: restart | a: add | e: edit | d: del | l: logs | q: quit"
+	statusText := "j/k: nav | /: search | s: start | x: stop | r: restart | a: add | e: edit | d: del | l: stdout | L: stderr | q: quit"
 	if m.width < 100 {
-		statusText = "j/k: nav | s: start | x: stop | r: restart | a: add | e: edit | d: del | q: quit"
+		statusText = "j/k: nav | s: start | x: stop | r: restart | a: add | e: edit | d: del | l/L: logs | q: quit"
 	}
 	status := lipgloss.NewStyle().
 		Foreground(fgColor).
@@ -636,8 +670,18 @@ func (m *Model) renderList() string {
 	// Show error at the top if present
 	var result string
 	if m.err != nil {
-		errorMsg := errorStyle.Render(fmt.Sprintf("⚠ Error: %v", m.err))
-		result = lipgloss.JoinVertical(lipgloss.Left, errorMsg, content, status)
+		// Format error message with line breaks for better readability
+		errText := fmt.Sprintf("⚠ Error: %v", m.err)
+		// Split error message into lines if it contains \n
+		errLines := strings.Split(errText, "\n")
+		var errorMsg strings.Builder
+		for i, line := range errLines {
+			if i > 0 {
+				errorMsg.WriteString("\n")
+			}
+			errorMsg.WriteString(errorStyle.Render(line))
+		}
+		result = lipgloss.JoinVertical(lipgloss.Left, errorMsg.String(), content, status)
 	} else {
 		result = lipgloss.JoinVertical(lipgloss.Left, content, status)
 	}

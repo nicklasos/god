@@ -3,7 +3,9 @@ package supervisor
 import (
 	"bufio"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -26,7 +28,9 @@ func (c *Client) GetStatus() ([]*Process, error) {
 		// Check if it's a configuration error
 		errStr := string(output)
 		if strings.Contains(errStr, "does not include supervisorctl section") {
-			return nil, fmt.Errorf("supervisord config is missing [supervisorctl] section. Add this to your config:\n[supervisorctl]\nserverurl=unix:///tmp/supervisor.sock")
+			// Try to detect socket path from config file
+			socketPath := DetectSocketPath()
+			return nil, fmt.Errorf("supervisord config is missing [supervisorctl] section.\n\nTo fix this, add the following to your supervisord config file:\n\n[supervisorctl]\nserverurl=%s\n\nOr if using TCP:\n[supervisorctl]\nserverurl=http://127.0.0.1:9001", socketPath)
 		}
 		if strings.Contains(errStr, "connection refused") || strings.Contains(errStr, "No such file") {
 			return nil, fmt.Errorf("supervisord is not running or socket not found. Start supervisord first")
@@ -113,6 +117,62 @@ func (c *Client) parseUptime(uptimeStr string) time.Duration {
 	return time.Duration(hours)*time.Hour +
 		time.Duration(minutes)*time.Minute +
 		time.Duration(seconds)*time.Second
+}
+
+// DetectSocketPath tries to detect the socket path from the supervisord config
+func DetectSocketPath() string {
+	configPath, err := FindConfigFile()
+	if err != nil {
+		return "unix:///tmp/supervisor.sock" // Default fallback
+	}
+
+	file, err := os.Open(configPath)
+	if err != nil {
+		return "unix:///tmp/supervisor.sock"
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	var inUnixSection bool
+	var socketPath string
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		// Skip comments and empty lines
+		if line == "" || strings.HasPrefix(line, ";") || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Check for [unix_http_server] section
+		if strings.HasPrefix(line, "[unix_http_server]") {
+			inUnixSection = true
+			continue
+		}
+
+		// Check if we're leaving the section
+		if inUnixSection && strings.HasPrefix(line, "[") {
+			break
+		}
+
+		// Look for file= directive in unix_http_server section
+		if inUnixSection && strings.HasPrefix(line, "file=") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				socketPath = strings.TrimSpace(parts[1])
+				// Expand ~ to home directory
+				if strings.HasPrefix(socketPath, "~") {
+					if homeDir, err := os.UserHomeDir(); err == nil {
+						socketPath = filepath.Join(homeDir, strings.TrimPrefix(socketPath, "~/"))
+					}
+				}
+				return "unix://" + socketPath
+			}
+		}
+	}
+
+	// Default fallback
+	return "unix:///tmp/supervisor.sock"
 }
 
 // Start starts a process
