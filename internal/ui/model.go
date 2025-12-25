@@ -397,6 +397,11 @@ func (m *Model) handleListKeyPress(msg tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
 func (m *Model) refreshProcesses() {
 	processes, err := m.client.GetStatus()
 	if err == nil {
+		// Reload config to ensure we have the latest
+		if newConfig, configErr := supervisor.LoadConfig(m.configPath); configErr == nil {
+			m.config = newConfig
+		}
+		// Merge config with processes
 		for _, proc := range processes {
 			if cfg := m.config.GetProcessConfig(proc.Name); cfg != nil {
 				proc.Config = cfg
@@ -433,15 +438,13 @@ func (m *Model) updateSizes() {
 		availableHeight = 6 // Absolute minimum
 	}
 
-	// Make left panel take up ~50% of screen width for better balance
-	listWidth := m.width * 50 / 100
-	if listWidth < 30 {
-		listWidth = 30 // Minimum width
+	// Make left panel take up ~45% of screen width for better balance
+	listWidth := m.width * 45 / 100
+	if listWidth < 28 {
+		listWidth = 28 // Minimum width
 	}
-	// Allow it to grow up to 55% on larger screens, but ensure right panel has enough space
-	maxListWidth := m.width * 55 / 100
-	if listWidth > maxListWidth {
-		listWidth = maxListWidth
+	if listWidth > 48 {
+		listWidth = 48 // Maximum width for very wide screens
 	}
 
 	// Calculate right panel width - account for gap and ensure it fits
@@ -506,9 +509,14 @@ func (m *Model) updateSizes() {
 		}
 	}
 
-	m.listModel.SetSize(listWidth, availableHeight)
-	m.detailModel.SetSize(rightWidth, infoHeight)
-	m.logsModel.SetSize(rightWidth, logHeight, logHeight)
+	// Calculate total right panel height to match left panel
+	// Right panel has: detail (infoHeight + 2 borders) + error log (logHeight + 2 borders) + stdout log (logHeight + 2 borders)
+	totalRightHeight := infoHeight + 2 + logHeight + 2 + logHeight + 2
+
+	// Set left panel to match the total right panel height
+	m.listModel.SetSize(listWidth, totalRightHeight)
+	m.detailModel.SetSize(rightWidth, infoHeight+2)           // +2 for borders
+	m.logsModel.SetSize(rightWidth, logHeight+2, logHeight+2) // +2 for borders
 	m.editorModel.SetSize(m.width-4, m.height-4)
 }
 

@@ -48,18 +48,29 @@ func (m *LogsModel) loadLogs() {
 	m.errorLog = []string{}
 	m.stdoutLog = []string{}
 
-	if m.process == nil || m.process.Config == nil {
+	if m.process == nil {
+		return
+	}
+
+	if m.process.Config == nil {
+		// Config not loaded - show message
+		m.errorLog = []string{"Config not loaded for this process"}
+		m.stdoutLog = []string{"Config not loaded for this process"}
 		return
 	}
 
 	// Load error log
 	if m.process.Config.StderrLogfile != "" {
 		m.errorLog = readLastLines(m.process.Config.StderrLogfile, logLines)
+	} else {
+		m.errorLog = []string{"No stderr logfile configured"}
 	}
 
 	// Load stdout log
 	if m.process.Config.StdoutLogfile != "" {
 		m.stdoutLog = readLastLines(m.process.Config.StdoutLogfile, logLines)
+	} else {
+		m.stdoutLog = []string{"No stdout logfile configured"}
 	}
 }
 
