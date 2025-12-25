@@ -52,12 +52,12 @@ func (m *DetailModel) loadLogs() {
 
 	// Load error log
 	if m.process.Config.StderrLogfile != "" {
-		m.errorLog = readLastLines(m.process.Config.StderrLogfile, 5)
+		m.errorLog = readLastLines(m.process.Config.StderrLogfile, 6)
 	}
 
 	// Load stdout log
 	if m.process.Config.StdoutLogfile != "" {
-		m.stdoutLog = readLastLines(m.process.Config.StdoutLogfile, 5)
+		m.stdoutLog = readLastLines(m.process.Config.StdoutLogfile, 6)
 	}
 }
 
@@ -76,50 +76,41 @@ func (m *DetailModel) View() string {
 	lines = append(lines, titleStyle.Render("Process Info"))
 	lines = append(lines, "")
 
-	// Row 1: Name and Status
-	nameStatus := labelStyle.Render("Name:") + " " + valueStyle.Render(m.process.Name)
-	statusStyle := GetStatusStyle(m.process.Status)
-	nameStatus += "  |  " + labelStyle.Render("Status:") + " " + statusStyle.Render(m.process.Status)
-	lines = append(lines, nameStatus)
+	// Name on its own line
+	lines = append(lines, labelStyle.Render("Name:")+" "+valueStyle.Render(m.process.Name))
 
-	// Row 2: PID and Uptime
-	if m.process.PID > 0 || m.process.Uptime > 0 {
-		var row2 string
-		if m.process.PID > 0 {
-			row2 = labelStyle.Render("PID:") + " " + valueStyle.Render(fmt.Sprintf("%d", m.process.PID))
-		}
-		if m.process.Uptime > 0 {
-			if row2 != "" {
-				row2 += "  |  "
-			}
-			row2 += labelStyle.Render("Uptime:") + " " + valueStyle.Render(formatUptime(m.process.Uptime))
-		}
-		if row2 != "" {
-			lines = append(lines, row2)
-		}
+	// Status on its own line
+	statusStyle := GetStatusStyle(m.process.Status)
+	lines = append(lines, labelStyle.Render("Status:")+" "+statusStyle.Render(m.process.Status))
+
+	// PID on its own line
+	if m.process.PID > 0 {
+		lines = append(lines, labelStyle.Render("PID:")+" "+valueStyle.Render(fmt.Sprintf("%d", m.process.PID)))
 	}
 
-	// Config info if available
+	// Uptime on its own line
+	if m.process.Uptime > 0 {
+		lines = append(lines, labelStyle.Render("Uptime:")+" "+valueStyle.Render(formatUptime(m.process.Uptime)))
+	}
+
+	// Config info if available - each on its own line
 	if m.process.Config != nil {
-		var cmdUserRow string
+		// Command on its own line
 		if m.process.Config.Command != "" {
 			cmd := m.process.Config.Command
-			maxCmdLen := m.width - 20
+			maxCmdLen := m.width - 10
 			if maxCmdLen > 0 && len(cmd) > maxCmdLen {
 				cmd = cmd[:maxCmdLen-3] + "..."
 			}
-			cmdUserRow = labelStyle.Render("Cmd:") + " " + valueStyle.Render(cmd)
-		}
-		if m.process.Config.User != "" {
-			if cmdUserRow != "" {
-				cmdUserRow += "  |  "
-			}
-			cmdUserRow += labelStyle.Render("User:") + " " + valueStyle.Render(m.process.Config.User)
-		}
-		if cmdUserRow != "" {
-			lines = append(lines, cmdUserRow)
+			lines = append(lines, labelStyle.Render("Cmd:")+" "+valueStyle.Render(cmd))
 		}
 
+		// User on its own line
+		if m.process.Config.User != "" {
+			lines = append(lines, labelStyle.Render("User:")+" "+valueStyle.Render(m.process.Config.User))
+		}
+
+		// Directory on its own line
 		if m.process.Config.Directory != "" {
 			dir := m.process.Config.Directory
 			maxDirLen := m.width - 10
