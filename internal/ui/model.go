@@ -295,7 +295,7 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
 
 	case ModeEdit, ModeAdd:
 		switch msg.String() {
-		case "enter":
+		case "shift+enter":
 			if err := m.editorModel.Validate(); err != nil {
 				m.editorModel.SetError(err.Error())
 				return true, m, nil
@@ -307,6 +307,7 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
 			m.editorModel.SetConfig(nil)
 			return true, m, nil
 		}
+		// Let editor handle other keys (including Enter for newlines)
 		return false, m, nil
 
 	case ModeDelete:
@@ -550,22 +551,25 @@ func (m *Model) saveProcess() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if m.mode == ModeAdd {
-		m.config.AddProgram(config)
-	} else {
-		oldProc := m.listModel.GetSelected()
-		if oldProc != nil {
-			m.config.UpdateProgram(oldProc.Name, config)
-		}
-	}
-
-	// Save config file
-	if err := m.config.Save(); err != nil {
+	// Save process config to conf.d/{process-name}.conf
+	if err := supervisor.SaveProcessConfig(config); err != nil {
 		m.editorModel.SetError(err.Error())
 		return m, nil
 	}
 
-	// Reload config
+	// Reread config files
+	if err := m.client.Reread(); err != nil {
+		m.editorModel.SetError(fmt.Sprintf("failed to reread config: %v", err))
+		return m, nil
+	}
+
+	// Update the process (adds new processes, updates existing ones)
+	if err := m.client.Update(config.Name); err != nil {
+		m.editorModel.SetError(fmt.Sprintf("failed to update process: %v", err))
+		return m, nil
+	}
+
+	// Reload config to get updated process list
 	newConfig, err := supervisor.LoadConfig(m.configPath)
 	if err != nil {
 		m.err = err
@@ -573,19 +577,6 @@ func (m *Model) saveProcess() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.config = newConfig
-
-	// Reread and update
-	if err := m.client.Reread(); err != nil {
-		m.err = err
-		m.mode = ModeList
-		return m, nil
-	}
-
-	if err := m.client.Update(config.Name); err != nil {
-		m.err = err
-		m.mode = ModeList
-		return m, nil
-	}
 
 	m.mode = ModeList
 	m.editorModel.SetConfig(nil)
@@ -611,16 +602,28 @@ func (m *Model) confirmDelete() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	m.config.DeleteProgram(proc.Name)
-
-	// Save config file
-	if err := m.config.Save(); err != nil {
+	// Delete the process config file from conf.d
+	if err := supervisor.DeleteProcessConfig(proc.Name); err != nil {
 		m.err = err
 		m.mode = ModeList
 		return m, nil
 	}
 
-	// Reload config
+	// Reread config files
+	if err := m.client.Reread(); err != nil {
+		m.err = err
+		m.mode = ModeList
+		return m, nil
+	}
+
+	// Update to remove the process
+	if err := m.client.Update(""); err != nil {
+		m.err = err
+		m.mode = ModeList
+		return m, nil
+	}
+
+	// Reload config to get updated process list
 	newConfig, err := supervisor.LoadConfig(m.configPath)
 	if err != nil {
 		m.err = err
@@ -628,19 +631,6 @@ func (m *Model) confirmDelete() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.config = newConfig
-
-	// Reread and update
-	if err := m.client.Reread(); err != nil {
-		m.err = err
-		m.mode = ModeList
-		return m, nil
-	}
-
-	if err := m.client.Update(""); err != nil {
-		m.err = err
-		m.mode = ModeList
-		return m, nil
-	}
 
 	m.mode = ModeList
 	m.deleteConfirm = false

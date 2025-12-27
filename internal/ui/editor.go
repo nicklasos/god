@@ -73,16 +73,8 @@ func (m *EditorModel) SetSize(width, height int) {
 func (m *EditorModel) Update(msg tea.Msg) (*EditorModel, tea.Cmd) {
 	var cmd tea.Cmd
 
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "esc":
-			return m, nil
-		case "enter":
-			return m, nil
-		}
-	}
-
+	// Let textarea handle all keys (including Enter for newlines)
+	// Shift+Enter will be handled by the parent model
 	m.textarea, cmd = m.textarea.Update(msg)
 	return m, cmd
 }
@@ -138,7 +130,7 @@ func (m *EditorModel) View() string {
 
 	// Help text
 	content.WriteString("\n")
-	helpText := "Enter: save | Esc: cancel"
+	helpText := "Shift+Enter: save | Esc: cancel"
 	content.WriteString(helpStyle.Render(helpText))
 
 	return detailPanelStyle.Width(m.width).Height(m.height).Render(content.String())

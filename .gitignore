@@ -43,3 +43,5 @@ Thumbs.db
 # Application specific
 supervisord-tui
 *.log
+
+.DS_Store

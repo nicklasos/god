@@ -406,6 +406,81 @@ func (c *Config) Save() error {
 	return nil
 }
 
+// FindConfDDir finds the conf.d directory path
+func FindConfDDir() (string, error) {
+	configPath, err := FindConfigFile()
+	if err != nil {
+		return "", err
+	}
+
+	// Try common conf.d locations
+	confDirs := []string{
+		"/etc/supervisor/conf.d",
+		"/etc/supervisord.d",
+		filepath.Join(filepath.Dir(configPath), "conf.d"),
+	}
+
+	for _, confDir := range confDirs {
+		if stat, err := os.Stat(confDir); err == nil && stat.IsDir() {
+			return confDir, nil
+		}
+	}
+
+	// Default to /etc/supervisor/conf.d even if it doesn't exist yet
+	// (we'll create it when saving)
+	return "/etc/supervisor/conf.d", nil
+}
+
+// SaveProcessConfig saves a single process config to conf.d/{process-name}.conf
+func SaveProcessConfig(prog *ProcessConfig) error {
+	confDir, err := FindConfDDir()
+	if err != nil {
+		return fmt.Errorf("failed to find conf.d directory: %w", err)
+	}
+
+	// Ensure conf.d directory exists
+	if err := os.MkdirAll(confDir, 0755); err != nil {
+		return fmt.Errorf("failed to create conf.d directory: %w", err)
+	}
+
+	// Save to conf.d/{process-name}.conf
+	configPath := filepath.Join(confDir, prog.Name+".conf")
+	file, err := os.Create(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to create config file: %w", err)
+	}
+	defer file.Close()
+
+	writer := bufio.NewWriter(file)
+	defer writer.Flush()
+
+	writeProgramSection(writer, prog)
+
+	return nil
+}
+
+// DeleteProcessConfig deletes a process config file from conf.d
+func DeleteProcessConfig(processName string) error {
+	confDir, err := FindConfDDir()
+	if err != nil {
+		return fmt.Errorf("failed to find conf.d directory: %w", err)
+	}
+
+	configPath := filepath.Join(confDir, processName+".conf")
+
+	// Check if file exists before trying to delete
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		// File doesn't exist, that's okay - maybe it was in main config
+		return nil
+	}
+
+	if err := os.Remove(configPath); err != nil {
+		return fmt.Errorf("failed to delete config file: %w", err)
+	}
+
+	return nil
+}
+
 // writeProgramSection writes a [program:name] section
 func writeProgramSection(writer *bufio.Writer, prog *ProcessConfig) {
 	writer.WriteString(fmt.Sprintf("[program:%s]\n", prog.Name))
